@@ -88,6 +88,9 @@ Guíala paso a paso en https://console.firebase.google.com :
 4. Según los roles elegidos:
    - `editor_video`, `imagenes` o `diseno_web` → registra el servidor de medios:
      `npx claude mcp add --scope user agentes-media -- node <ruta absoluta>/motor/media-server.mjs`
+   - `diseno_web` → recomienda las Design Skills de typeui.sh (https://www.typeui.sh/design-skills, MIT, de sus autores).
+     Si la persona las quiere, que las descargue desde ese sitio y copie cada carpeta de skill dentro de
+     `motor/.claude/skills/`. No las copies tú desde otra fuente.
    - `editor_video` → skills de animación: en `motor/`, `npx skills add heygen-com/hyperframes --all -a claude-code -y`
    - `imagenes` → Magnific: `npx claude mcp add --transport http --scope user magnific https://mcp.magnific.com`,
      y luego la persona abre `claude`, escribe `/mcp`, elige magnific → Authenticate.

@@ -1,5 +1,7 @@
 # Agentes IA 3D
 
+![Oficina con agentes de IA](docs/oficina-3d.jpg)
+
 **Una oficina 3D con agentes de IA que trabajan para tu negocio.** Crea tu equipo de agentes (copies, estrategia,
 diseño web, video, imágenes, SEO, asistente personal…), ponles el nombre que quieras, asígnales tareas y míralos
 trabajar en una oficina 3D. Cada entrega llega a "Espera Aprobación": **nada se publica sin ti**.
@@ -72,6 +74,14 @@ gratis en Firebase y dejará la app publicada y el motor funcionando.
 | Investigación | Informes con fuentes | — |
 
 Agrega los tuyos en [`roles/catalogo.json`](roles/catalogo.json).
+
+### Recomendado para el rol de diseño web
+
+El agente de diseño web trabaja mucho mejor con sistemas de diseño instalados como skills de Claude.
+Recomendamos las **[Design Skills de typeui.sh](https://www.typeui.sh/design-skills)** (licencia MIT, de sus autores):
+más de 60 estilos (bento, glassmorphism, brutalism, premium, minimal…). No vienen incluidas en este repositorio;
+instálalas desde su sitio en `motor/.claude/skills/` y el agente las usará solo. El asistente `/instalar` te lo ofrece
+si eliges ese rol.
 
 ## Estructura
 

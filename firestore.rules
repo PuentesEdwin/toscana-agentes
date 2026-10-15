@@ -1,0 +1,126 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAuth() {
+      return request.auth != null;
+    }
+    function userDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+    function isAdmin() {
+      return isAuth() && userDoc().role == 'admin';
+    }
+    function isEmployee() {
+      return isAuth() && userDoc().role == 'empleado';
+    }
+    function isActiveUser() {
+      return isAdmin() || isEmployee();
+    }
+    // Motor de agentes (tu PC): usuario robot de correo/contraseña, sin doc en users. /instalar pone su correo.
+    function isAgentBot() {
+      return isAuth() && request.auth.token.email == '__CORREO_ROBOT__';
+    }
+    function isAgentTask(data) {
+      return exists(/databases/$(database)/documents/agents/$(data.asignado));
+    }
+
+    // Users: lectura para autenticados; escritura propia o de admin.
+    // CANDADO ANTI-FANTASMA: crear un usuario exige incluir el email real
+    // de la cuenta de Google — imposible crear docs sin identidad.
+    match /users/{userId} {
+      allow read: if isAuth();
+      allow create: if isAuth() && request.auth.uid == userId
+        && request.resource.data.email == request.auth.token.email;
+      allow update: if isAuth() && (
+        isAdmin() ||
+        (request.auth.uid == userId &&
+          (!('email' in resource.data) || request.resource.data.email == resource.data.email))
+      );
+      allow delete: if isAdmin();
+    }
+
+    // Tasks: todos los activos leen; empleados editan solo las suyas; solo admin elimina
+    match /tasks/{taskId} {
+      allow read: if isAuth();
+      // El coordinador (vía el robot) solo puede crear tareas asignadas a agentes
+      allow create: if isActiveUser() || (isAgentBot() && isAgentTask(request.resource.data));
+      allow update: if isAuth() && (
+        isAdmin() ||
+        (isEmployee() && (
+          resource.data.asignado == request.auth.uid ||
+          resource.data.createdBy == request.auth.token.email ||
+          // Auto-asignarse: un empleado puede reclamar una tarea PENDIENTE para si mismo
+          (resource.data.estado == 'pendiente' && request.resource.data.asignado == request.auth.uid)
+        )) ||
+        // El robot solo toca tareas de agentes y no puede reasignarlas
+        (isAgentBot() && isAgentTask(resource.data) && request.resource.data.asignado == resource.data.asignado)
+      );
+      allow delete: if isAdmin();
+    }
+
+    // Config (lista de clientes): leer todos, escribir solo admin
+    match /config/{docId} {
+      allow read: if isAuth();
+      allow write: if isAdmin() || (isAgentBot() && docId == 'agentWorker');
+    }
+
+    // Invitaciones: solo admins gestionan; el invitado necesita leer/borrar la suya al registrarse
+    match /invites/{email} {
+      allow read, delete: if isAuth();
+      allow create, update: if isAdmin();
+    }
+
+    // Muro de discusión del equipo
+    match /discussions/{postId} {
+      allow read: if isAuth();
+      allow create, update: if isActiveUser();
+      allow delete: if isAuth() && (isAdmin() || resource.data.uid == request.auth.uid);
+    }
+
+    // Discusión (muro público interno)
+    match /posts/{postId} {
+      allow read: if isAuth();
+      allow create: if isActiveUser();
+      allow update: if isActiveUser();
+      allow delete: if isAuth() && (isAdmin() || resource.data.authorUid == request.auth.uid);
+    }
+
+    // Agentes de IA: todos los ven en la oficina; solo administradores los gestionan
+    match /agents/{agentId} {
+      allow read: if isAuth();
+      allow write: if isAdmin();
+      // El instalador crea los agentes iniciales a través del robot del motor
+      allow create: if isAgentBot();
+    }
+
+    // Chat con los agentes (uno por agente + 'grupo'): administradores y el robot del motor
+    match /agentChats/{chatId}/mensajes/{msgId} {
+      allow read: if isAdmin() || isAgentBot();
+      allow create: if isAgentBot() || (isAdmin() && request.resource.data.from == 'humano');
+      allow update: if isAgentBot();
+      allow delete: if isAdmin();
+    }
+
+    // Registro de horas trabajadas por día
+    match /worklog/{logId} {
+      allow read: if isAuth();
+      allow create, update: if isActiveUser();
+      allow delete: if isAdmin();
+    }
+
+    // Chat privado
+    match /chats/{chatId} {
+      allow read: if isAuth();
+      allow write: if isActiveUser() && chatId.matches('.*' + request.auth.uid + '.*');
+
+      match /messages/{msgId} {
+        allow read: if isAuth() && chatId.matches('.*' + request.auth.uid + '.*');
+        allow create: if isActiveUser()
+          && chatId.matches('.*' + request.auth.uid + '.*')
+          && request.resource.data.from == request.auth.uid;
+        allow update, delete: if false;
+      }
+    }
+  }
+}

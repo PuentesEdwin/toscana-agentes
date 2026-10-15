@@ -1,0 +1,25 @@
+# Dependencias y builds
+node_modules/
+app/dist/
+*.zip
+
+# Secretos y configuración de cada negocio (nunca se suben)
+.env
+.env.*
+!.env.example
+motor/negocio.json
+motor/media-config.json
+.firebaserc
+
+# Datos de trabajo del motor
+motor/logs/
+motor/trabajos/
+motor/entregas/
+motor/modelos/
+motor/.claude/
+motor/.agents/
+
+# Sistema
+.DS_Store
+Thumbs.db
+*.log

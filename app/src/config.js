@@ -10,6 +10,9 @@ export const BRAND = {
   url: env.VITE_APP_URL || (typeof window !== 'undefined' ? window.location.origin : ''),
 }
 
+// Diseño de la Oficina 3D (app/src/office/themes.js): clasico, sol, cuartel o torre
+export const OFFICE_THEME = env.VITE_OFFICE_THEME || 'clasico'
+
 // Dueño de la cuenta: acceso total y oficina principal en la Oficina 3D
 export const SUPER_ADMIN_EMAIL = (env.VITE_SUPER_ADMIN_EMAIL || '').toLowerCase()
 

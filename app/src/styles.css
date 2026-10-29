@@ -1727,3 +1727,19 @@ tbody tr:hover { background: var(--bg-2); }
 .agent-chat-input textarea { flex: 1; resize: none; border: 1px solid var(--border); border-radius: 12px; padding: 9px 11px; font: inherit; font-size: 13px; background: var(--bg-2); color: var(--text); max-height: 120px; field-sizing: content; }
 .agent-chat-input textarea:focus { outline: 2px solid var(--purple-mid); }
 @media (max-width: 760px) { .agent-chat { position: fixed; inset: auto 8px 8px 8px; top: 15vh; width: auto; z-index: 60; } }
+
+/* ---- Barra "¿Qué quieres crear hoy?" de la Oficina ---- */
+.create-bar { padding: 16px 18px; margin-bottom: 16px; display: flex; flex-direction: column; gap: 12px; }
+.create-bar-title { font-size: 18px; font-weight: 800; }
+.create-bar-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; }
+.create-btn {
+  display: flex; flex-direction: column; gap: 2px; align-items: flex-start; text-align: left;
+  padding: 12px 14px; border-radius: var(--radius); border: 2px solid var(--purple-mid);
+  background: var(--purple-light); color: var(--text); cursor: pointer; font-family: inherit;
+  transition: border-color var(--transition), transform var(--transition);
+}
+.create-btn:hover, .create-btn:focus-visible { border-color: var(--purple); transform: translateY(-1px); outline: none; }
+.create-btn strong { font-size: 16px; color: var(--purple); }
+.create-btn span { font-size: 13px; color: var(--text-2); }
+.create-btn small { font-size: 12px; font-weight: 700; color: var(--text); margin-top: 4px; }
+@media (prefers-reduced-motion: reduce) { .create-btn { transition: none; } .create-btn:hover { transform: none; } }

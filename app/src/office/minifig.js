@@ -154,7 +154,8 @@ export function createMinifig(look = {}) {
 
   // Torso con estampado frontal (material 4 = cara +z de la caja)
   const side = plastic(l.torso)
-  const front = plastic('#ffffff', { map: torsoPrint(l.torso, { emblem: l.emblem, seed: (l.torso || '').length }) })
+  const traje = l.ropa === 'traje' ? { corbata: l.corbata || l.accent || '#c0392b' } : null
+  const front = plastic('#ffffff', { map: torsoPrint(l.torso, { emblem: traje ? '' : l.emblem, seed: (l.torso || '').length, traje }) })
   const torso = new THREE.Mesh(torsoGeometry(), [side, side, side, side, front, side])
   torso.position.y = 0.53
   torso.castShadow = true

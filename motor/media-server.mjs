@@ -10,7 +10,7 @@ import ffmpegPath from 'ffmpeg-static'
 import { spawn } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, statSync } from 'node:fs'
 import { join, dirname, basename, extname, isAbsolute, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import dns from 'node:dns'
 import net from 'node:net'
 
@@ -251,6 +251,55 @@ server.tool('guardar_texto',
       const dest = outPath(agente, nombre, '.' + extension)
       writeFileSync(dest, contenido)
       return ok(`Archivo guardado: ${dest}`)
+    } catch (e) { return fail(e) }
+  })
+
+// Navegador del PC (Edge viene con Windows) para convertir HTML en imagen
+function findBrowser() {
+  const pf = process.env.ProgramFiles || 'C:\\Program Files', pf86 = process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)'
+  const list = [
+    join(pf86, 'Microsoft', 'Edge', 'Application', 'msedge.exe'), join(pf, 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
+    join(pf, 'Google', 'Chrome', 'Application', 'chrome.exe'), join(pf86, 'Google', 'Chrome', 'Application', 'chrome.exe'),
+    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
+    '/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser',
+  ]
+  return list.find(p => existsSync(p))
+}
+
+server.tool('html_a_imagen',
+  'Convierte un diseño en HTML (flyer, post, portada) en una imagen PNG o JPG en tu carpeta de entregas. Las imágenes que uses en el HTML pásalas en "archivos" y refiérelas solo por su nombre de archivo.',
+  {
+    html: z.string().describe('Documento HTML completo, con el tamaño fijo del diseño en el body'),
+    ancho: z.number().int().min(200).max(4000).default(1080),
+    alto: z.number().int().min(200).max(4000).default(1350),
+    archivos: z.array(z.string()).default([]).describe('Rutas o URLs de imágenes, logos o fuentes usados en el HTML'),
+    nombre: z.string().describe('Nombre del archivo final, sin extensión'),
+    formato: z.enum(['png', 'jpg']).default('jpg'),
+    agente: agenteParam,
+  },
+  async ({ html, ancho, alto, archivos, nombre, formato, agente }) => {
+    try {
+      const browser = findBrowser()
+      if (!browser) return fail('No encontré Microsoft Edge ni Google Chrome en este PC.')
+      const dir = join(ROOT, 'trabajos', '_html', `${Date.now()}`)
+      mkdirSync(dir, { recursive: true })
+      for (const a of archivos) {
+        const src = await resolveInput(a, agente)
+        writeFileSync(join(dir, /^https?:/i.test(a) ? basename(new URL(a).pathname) : basename(src)), readFileSync(src))
+      }
+      writeFileSync(join(dir, 'index.html'), html)
+      const png = join(dir, 'captura.png')
+      await new Promise((res, rej) => {
+        const p = spawn(browser, ['--headless=new', '--disable-gpu', '--hide-scrollbars', '--force-device-scale-factor=1',
+          `--window-size=${ancho},${alto}`, '--virtual-time-budget=5000', `--screenshot=${png}`,
+          pathToFileURL(join(dir, 'index.html')).href], { windowsHide: true })
+        const timer = setTimeout(() => { p.kill(); rej(new Error('El navegador tardó demasiado')) }, 60_000)
+        p.on('error', rej)
+        p.on('close', () => { clearTimeout(timer); existsSync(png) ? res() : rej(new Error('El navegador no generó la imagen')) })
+      })
+      const dest = outPath(agente, nombre, '.' + formato)
+      await ffmpeg(['-i', png, ...(formato === 'jpg' ? ['-q:v', '2'] : []), '-frames:v', '1', dest])
+      return ok(`Imagen guardada: ${dest} (${ancho}x${alto})`)
     } catch (e) { return fail(e) }
   })
 

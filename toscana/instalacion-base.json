@@ -1,0 +1,22 @@
+{
+  "_ayuda": "Respuestas ya conocidas de Toscana Tours para /instalar. Sin contraseñas ni datos de clientes. Faltan: firebase, robotEmail y confirmar el correo del dueño.",
+  "negocio": {
+    "nombre": "Toscana Tours",
+    "descripcion": "Agencia de viajes de Bucaramanga, Colombia (RNT 105408). Organiza tours propios en bus con hotel y actividades, vende paquetes nacionales e internacionales y arma viajes en grupo a la medida. Salidas frecuentes a Boyacá, Barranquilla, Cartagena y Santa Marta; los viajes pueden salir desde cualquier ciudad de Colombia. Toda la atención es por WhatsApp.",
+    "identidad": "Logo con sol naranja, colinas verdes y olas azules. Tipografía Raleway. Colores: sol #f8b155, verde #03b271, bosque #156d54, mar #20aeee, noche #0b2a4a. Estilo alegre, familiar y claro, con fotos de destinos.",
+    "tono": "Cálido, familiar y sencillo, de tú. Frases cortas para viajeros de más de 45 años. Eslogan: En Toscana Tours no eres un pasajero más, eres parte de nuestra familia.",
+    "color": "#156d54",
+    "idioma": "español",
+    "logo": "/logo.png",
+    "logoOscuro": "/logo-blanco.png"
+  },
+  "dueno": { "nombre": "Edwin Puentes", "email": "" },
+  "app": { "nombre": "Toscana Tours · Oficina" },
+  "equipo": [
+    { "nombre": "Coordinador", "rol": "coordinador" },
+    { "nombre": "Cotizador", "rol": "cotizador_toscana" },
+    { "nombre": "Itinerarios", "rol": "itinerarios_toscana" },
+    { "nombre": "Redes", "rol": "redes_toscana" },
+    { "nombre": "Flyers", "rol": "flyers_toscana" }
+  ]
+}

@@ -27,6 +27,11 @@ Explica lo que va a necesitar: una cuenta de Google, una suscripción de Claude 
 
 ## Fase 1 · Entrevista
 
+**Toscana Tours:** si existe `toscana/instalacion-base.json`, ya trae el negocio, la marca, el logo y el equipo de
+agentes. Muéstralo en una tabla corta y pide confirmación; pregunta solo lo que falta (correo de Google del dueño) y
+si quiere cambiar los nombres de los agentes. No repitas la entrevista completa. En la Fase 3 parte de ese archivo
+(cópialo como `instalacion.json` y agrégale `firebase`, `robotEmail` y `dueno.email`).
+
 Usa la herramienta de preguntas (AskUserQuestion) cuando las opciones sean cerradas; si no, pregunta en texto.
 Reúne:
 
@@ -86,7 +91,7 @@ Guíala paso a paso en https://console.firebase.google.com :
    iniciado sesión en Claude Code en este equipo, que ejecute en `motor/`: `npx claude auth login`
    (en Windows: `node_modules\.bin\claude.cmd auth login`).
 4. Según los roles elegidos:
-   - `editor_video`, `imagenes` o `diseno_web` → registra el servidor de medios:
+   - `editor_video`, `imagenes`, `diseno_web`, `flyers_toscana` o `itinerarios_toscana` → registra el servidor de medios:
      `npx claude mcp add --scope user agentes-media -- node <ruta absoluta>/motor/media-server.mjs`
    - `diseno_web` → recomienda las Design Skills de typeui.sh (https://www.typeui.sh/design-skills, MIT, de sus autores).
      Si la persona las quiere, que las descargue desde ese sitio y copie cada carpeta de skill dentro de

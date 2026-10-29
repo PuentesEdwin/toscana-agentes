@@ -1,3 +1,20 @@
+# Toscana Tours · Oficina de agentes
+
+Copia de [Agentes IA 3D](https://github.com/ederland/Agentes_IA_3D) (de Ederland Studio, licencia MIT) adaptada a
+**Toscana Tours**: tablero de tareas donde el equipo y los agentes de IA trabajan juntos, y nada se publica sin aprobación.
+
+Lo propio de Toscana:
+
+- `toscana/instalacion-base.json`: datos del negocio, marca y equipo de agentes para `/instalar` (sin claves).
+- `roles/catalogo.json`: roles Cotizador, Itinerarios, Redes (Instagram y Facebook), Flyers y Seguimiento de prospectos.
+- `motor/CLAUDE.md`: reglas de Toscana que todos los agentes cumplen.
+- Herramienta `html_a_imagen` para que el agente de Flyers entregue imágenes, usando el Edge o Chrome del PC.
+- Logo y tipografía Raleway en la app.
+
+Aquí nunca van claves, datos de clientes ni precios: este repositorio es público.
+
+---
+
 # Agentes IA 3D
 
 ![Oficina con agentes de IA](docs/oficina-3d.jpg)

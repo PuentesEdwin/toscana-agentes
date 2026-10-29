@@ -8,7 +8,8 @@ import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
 import { createMinifig } from './minifig.js'
 import { NavGrid } from './navgrid.js'
-import { woodTexture, tileTexture, carpetTexture } from './textures.js'
+import { woodTexture, tileTexture, carpetTexture, posterTexture, busTexture, routeMapTexture } from './textures.js'
+import { THEMES, DESTINOS, TOSCANA } from './themes.js'
 
 // ===== Planta (metros). x: oeste(-) a este(+); z: norte(-) a sur(+) =====
 // Franja norte: 3 oficinas privadas, sala de reuniones, cocina y baño.
@@ -33,22 +34,25 @@ const ISO_DIR = new THREE.Vector3(1, 1.15, 1).normalize()
 const UP = new THREE.Vector3(0, 1, 0)
 
 // ===== Materiales =====
+// Los colores principales cambian con el tema de la Oficina (themes.js)
 const MAT = {}
-function mats() {
-  if (MAT.ready) return MAT
+function mats(theme) {
+  if (MAT.ready && (!theme || MAT.ready === theme.id)) return MAT
+  const c = { wall: '#f4f2ee', wallCap: '#7d838d', glass: '#cfe8f2', frame: '#3c424c', deskTop: '#f7f7f5', fabric: '#2f3440',
+    fabricAccent: '#4b2bb3', leather: '#1f2229', glow: '#7c4dff', ...(theme?.mat || {}) }
   Object.assign(MAT, {
-    ready: true,
-    wall: new THREE.MeshStandardMaterial({ color: '#f4f2ee', roughness: 0.92 }),
-    wallCap: new THREE.MeshStandardMaterial({ color: '#7d838d', roughness: 0.7 }),
-    glass: new THREE.MeshStandardMaterial({ color: '#cfe8f2', roughness: 0.05, metalness: 0.2, transparent: true, opacity: 0.18, depthWrite: false }),
-    frame: new THREE.MeshStandardMaterial({ color: '#3c424c', roughness: 0.45, metalness: 0.6 }),
-    deskTop: new THREE.MeshStandardMaterial({ color: '#f7f7f5', roughness: 0.35 }),
+    ready: theme?.id || 'clasico',
+    wall: new THREE.MeshStandardMaterial({ color: c.wall, roughness: 0.92 }),
+    wallCap: new THREE.MeshStandardMaterial({ color: c.wallCap, roughness: 0.7 }),
+    glass: new THREE.MeshStandardMaterial({ color: c.glass, roughness: 0.05, metalness: 0.2, transparent: true, opacity: 0.18, depthWrite: false }),
+    frame: new THREE.MeshStandardMaterial({ color: c.frame, roughness: 0.45, metalness: 0.6 }),
+    deskTop: new THREE.MeshStandardMaterial({ color: c.deskTop, roughness: 0.35 }),
     deskWood: new THREE.MeshStandardMaterial({ color: '#b98a5a', roughness: 0.55 }),
     metal: new THREE.MeshStandardMaterial({ color: '#9aa1ab', roughness: 0.3, metalness: 0.8 }),
     dark: new THREE.MeshStandardMaterial({ color: '#23262d', roughness: 0.5 }),
-    fabric: new THREE.MeshStandardMaterial({ color: '#2f3440', roughness: 0.85 }),
-    fabricPurple: new THREE.MeshStandardMaterial({ color: '#4b2bb3', roughness: 0.8 }),
-    leather: new THREE.MeshStandardMaterial({ color: '#1f2229', roughness: 0.45 }),
+    fabric: new THREE.MeshStandardMaterial({ color: c.fabric, roughness: 0.85 }),
+    fabricPurple: new THREE.MeshStandardMaterial({ color: c.fabricAccent, roughness: 0.8 }),
+    leather: new THREE.MeshStandardMaterial({ color: c.leather, roughness: 0.45 }),
     leaf: new THREE.MeshStandardMaterial({ color: '#3f8f45', roughness: 0.7, flatShading: true }),
     leaf2: new THREE.MeshStandardMaterial({ color: '#5aa95e', roughness: 0.7, flatShading: true }),
     pot: new THREE.MeshStandardMaterial({ color: '#e8e4dc', roughness: 0.6 }),
@@ -59,7 +63,8 @@ function mats() {
     counter: new THREE.MeshStandardMaterial({ color: '#2e3138', roughness: 0.25 }),
     steel: new THREE.MeshStandardMaterial({ color: '#c9ced6', roughness: 0.25, metalness: 0.9 }),
     tv: new THREE.MeshStandardMaterial({ color: '#0f1115', roughness: 0.2, emissive: '#16233a', emissiveIntensity: 0.6 }),
-    purpleGlow: new THREE.MeshStandardMaterial({ color: '#7c4dff', emissive: '#7c4dff', emissiveIntensity: 1.2 }),
+    purpleGlow: new THREE.MeshStandardMaterial({ color: c.glow, emissive: c.glow, emissiveIntensity: 1.2 }),
+    glowColor: c.glow,
   })
   return MAT
 }
@@ -267,15 +272,17 @@ class Builder {
   }
 }
 
-function buildOffice(scene, nav) {
-  const M = mats()
+function buildOffice(scene, nav, theme = THEMES.clasico, logoUrl) {
+  const M = mats(theme)
   const b = new Builder(scene, nav)
-  const wood = woodTexture('#c49466')
-  const darkWood = woodTexture('#8a6242', 1, 1, 21)
-  const tile = tileTexture('#e3e6ea', '#c3c8cf', 4)
-  const plaza = tileTexture('#cfd3d8', '#b3b8bf', 2, 1, 1, 9)
-  const carpet = carpetTexture('#6b6f7c')
-  const labCarpet = carpetTexture('#3a3357', 1, 1, 17)
+  const pisos = theme.pisos || {}
+  const decor = theme.decor || {}
+  const wood = woodTexture(pisos.equipo || '#c49466')
+  const darkWood = woodTexture(pisos.reuniones || '#8a6242', 1, 1, 21)
+  const tile = tileTexture(...(pisos.interior || ['#e3e6ea', '#c3c8cf']), 4)
+  const plaza = tileTexture(...(pisos.exterior || ['#cfd3d8', '#b3b8bf']), 2, 1, 1, 9)
+  const carpet = carpetTexture(pisos.oficinas || '#6b6f7c')
+  const labCarpet = carpetTexture(pisos.lab || '#3a3357', 1, 1, 17)
 
   // Exterior y pisos
   b.floor(-28, -22, 28, 22, plaza, -0.02, 0.85)
@@ -303,7 +310,15 @@ function buildOffice(scene, nav) {
   b.wall(B.x0, B.z0, B.x0, B.z1, 2.8, 0.25)
   b.glassWall(B.x0, B.z1, B.x1, B.z1, 2.6, 1.6)
   b.glassWall(B.x1, B.z0, B.x1, B.z1, 2.6, 1.6)
-  for (const x of [-13.3, -7.9, -2.5, 3.4, 9.3]) b.box(1.8, 1.2, 0.05, M.glass, x, 1.6, B.z0 + 0.14, { shadow: false })
+  ;[-13.3, -7.9, -2.5, 3.4, 9.3].forEach((x, i) => {
+    // En la sala de reuniones (x 3.4) está la pantalla: ahí no va afiche
+    if (!decor.afiches || x === 3.4) return b.box(1.8, 1.2, 0.05, M.glass, x, 1.6, B.z0 + 0.14, { shadow: false })
+    // Afiches de destinos enmarcados en la pared norte
+    const d = DESTINOS[i % DESTINOS.length]
+    b.box(1.9, 1.3, 0.04, M.frame, x, 1.75, B.z0 + 0.14, { shadow: false })
+    b.mesh(new THREE.PlaneGeometry(1.8, 1.2), new THREE.MeshStandardMaterial({ map: posterTexture(d.nombre, d.tipo, TOSCANA), roughness: 0.6 }),
+      x, 1.75, B.z0 + 0.17, { shadow: false })
+  })
 
   // Franja norte de salas: divisiones sólidas bajas y frente de vidrio con puerta
   for (const r of ROOMS.slice(1)) b.wall(r.x0, B.z0, r.x0, NORTH_WALL_Z, 1.8)
@@ -375,23 +390,27 @@ function buildOffice(scene, nav) {
   b.sofa(-12.0, 9.8, Math.PI, M.fabricPurple, 2.6)
   b.box(1.2, 0.36, 0.6, M.deskWood, -12.0, 0.18, 8.6)
   b.block(-12.0, 8.6, 1.2, 0.6, 0, 0.2)
-  b.box(0.05, 1.3, 2.6, M.white, B.x0 + 0.16, 1.4, 2.2)
+  if (decor.logo && logoUrl) logoWall(b, logoUrl, B.x0 + 0.16, 2.2)
+  else b.box(0.05, 1.3, 2.6, M.white, B.x0 + 0.16, 1.4, 2.2)
   b.plant(-15.3, -3.6, 1.2)
   b.plant(-5.6, 10.3, 1.2)
 
-  // Jardín central: jardinera de madera elevada con césped, árbol y estanque
+  // Centro: jardín (clásico), globo holográfico o mapa de destinos según el tema
   const gw = GARDEN.x1 - GARDEN.x0, gd = GARDEN.z1 - GARDEN.z0
   const gcx = (GARDEN.x0 + GARDEN.x1) / 2, gcz = (GARDEN.z0 + GARDEN.z1) / 2
-  b.box(gw, 0.42, gd, M.deskWood, gcx, 0.21, gcz)
-  b.box(gw - 0.24, 0.05, gd - 0.24, M.grass, gcx, 0.44, gcz, { shadow: false })
-  b.block(gcx, gcz, gw, gd, 0, 0.25)
-  b.mesh(new THREE.CylinderGeometry(0.16, 0.24, 1.7, 10), new THREE.MeshStandardMaterial({ color: '#6b4a2d', roughness: 0.9 }), gcx - 0.8, 1.3, gcz - 0.5)
-  b.mesh(new THREE.IcosahedronGeometry(1.25, 1), M.leaf, gcx - 0.8, 2.55, gcz - 0.5)
-  b.mesh(new THREE.IcosahedronGeometry(0.8, 1), M.leaf2, gcx - 0.2, 2.95, gcz - 0.1)
-  b.mesh(new THREE.CylinderGeometry(0.75, 0.75, 0.04, 32), M.water, gcx + 1.4, 0.47, gcz + 1.4, { shadow: false })
-  ;[[-2.4, -0.8], [2.4, -0.9], [-2.3, 3.6], [0.8, 3.7], [2.5, 1.3]].forEach(([x, z], i) => {
-    b.mesh(new THREE.IcosahedronGeometry(0.42, 1), i % 2 ? M.leaf : M.leaf2, x, 0.78, z)
-  })
+  if (decor.centro === 'holograma' || decor.centro === 'mapa') centerPiece(b, decor.centro, gcx, gcz, gw, gd)
+  else {
+    b.box(gw, 0.42, gd, M.deskWood, gcx, 0.21, gcz)
+    b.box(gw - 0.24, 0.05, gd - 0.24, M.grass, gcx, 0.44, gcz, { shadow: false })
+    b.block(gcx, gcz, gw, gd, 0, 0.25)
+    b.mesh(new THREE.CylinderGeometry(0.16, 0.24, 1.7, 10), new THREE.MeshStandardMaterial({ color: '#6b4a2d', roughness: 0.9 }), gcx - 0.8, 1.3, gcz - 0.5)
+    b.mesh(new THREE.IcosahedronGeometry(1.25, 1), M.leaf, gcx - 0.8, 2.55, gcz - 0.5)
+    b.mesh(new THREE.IcosahedronGeometry(0.8, 1), M.leaf2, gcx - 0.2, 2.95, gcz - 0.1)
+    b.mesh(new THREE.CylinderGeometry(0.75, 0.75, 0.04, 32), M.water, gcx + 1.4, 0.47, gcz + 1.4, { shadow: false })
+    ;[[-2.4, -0.8], [2.4, -0.9], [-2.3, 3.6], [0.8, 3.7], [2.5, 1.3]].forEach(([x, z], i) => {
+      b.mesh(new THREE.IcosahedronGeometry(0.42, 1), i % 2 ? M.leaf : M.leaf2, x, 0.78, z)
+    })
+  }
   b.bench(gcx, GARDEN.z0 - 0.75, 0)
   b.bench(gcx, GARDEN.z1 + 0.75, Math.PI)
   b.bench(GARDEN.x0 - 0.75, gcz, Math.PI / 2)
@@ -418,13 +437,99 @@ function buildOffice(scene, nav) {
   }
   b.plant(5.6, -3.0, 1.1)
 
+  if (decor.holoMesa) b.coordinatorGlobe = holoGlobe(b, 9.6 + 1.6, 1.0, 8.7 + 0.45, 0.22)
+  if (decor.bus) bus(b, -10, 13.6)
+  if (decor.neon) neon(b, decor.neon, decor.neon2)
   return b
+}
+
+// Logo de la marca sobre un panel en la pared oeste del área del equipo
+function logoWall(b, url, x, z) {
+  b.box(0.05, 2.0, 1.7, new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.6 }), x, 1.45, z)
+  const tex = new THREE.TextureLoader().load(url)
+  tex.colorSpace = THREE.SRGBColorSpace
+  const logo = b.mesh(new THREE.PlaneGeometry(1.2, 1.72), new THREE.MeshBasicMaterial({ map: tex, transparent: true }), x + 0.04, 1.45, z,
+    { ry: Math.PI / 2, shadow: false })
+  logo.receiveShadow = false
+}
+
+// Globo holográfico: esfera de líneas, núcleo azul y dos anillos que giran
+function holoGlobe(b, x, y, z, r) {
+  const M = mats()
+  const g = new THREE.Group()
+  g.position.set(x, y, z)
+  b.group.add(g)
+  const lines = new THREE.Mesh(new THREE.IcosahedronGeometry(r, 2),
+    new THREE.MeshBasicMaterial({ color: M.glowColor, wireframe: true, transparent: true, opacity: 0.75 }))
+  const core = new THREE.Mesh(new THREE.SphereGeometry(r * 0.82, 24, 16),
+    new THREE.MeshStandardMaterial({ color: TOSCANA.mar, emissive: TOSCANA.mar, emissiveIntensity: 0.5, transparent: true, opacity: 0.35 }))
+  const ring1 = new THREE.Mesh(new THREE.TorusGeometry(r * 1.35, r * 0.04, 8, 48), M.purpleGlow)
+  ring1.rotation.x = Math.PI / 2.3
+  const ring2 = new THREE.Mesh(new THREE.TorusGeometry(r * 1.6, r * 0.03, 8, 48),
+    new THREE.MeshStandardMaterial({ color: TOSCANA.sol, emissive: TOSCANA.sol, emissiveIntensity: 1 }))
+  ring2.rotation.x = Math.PI / 1.8
+  g.add(lines, core, ring1, ring2)
+  g.userData = { lines, ring1, ring2, baseY: y }
+  return g
+}
+
+// Plataforma central con el globo grande (cuartel) o el mapa de rutas a los destinos (torre)
+function centerPiece(b, tipo, cx, cz, w, d) {
+  const M = mats()
+  const r = Math.min(w, d) / 2
+  b.mesh(new THREE.CylinderGeometry(r, r + 0.1, 0.3, 48), M.frame, cx, 0.15, cz)
+  b.block(cx, cz, w, d, 0, 0.25)
+  if (tipo === 'mapa') {
+    const map = b.mesh(new THREE.CircleGeometry(r - 0.12, 48), new THREE.MeshStandardMaterial({ map: routeMapTexture(TOSCANA, DESTINOS), roughness: 0.5 }),
+      cx, 0.305, cz, { shadow: false })
+    map.rotation.x = -Math.PI / 2
+    b.centerGlobe = holoGlobe(b, cx, 1.6, cz, 0.55)
+  } else {
+    const rim = b.mesh(new THREE.TorusGeometry(r - 0.05, 0.04, 8, 64), M.purpleGlow, cx, 0.31, cz, { shadow: false })
+    rim.rotation.x = Math.PI / 2
+    b.mesh(new THREE.CylinderGeometry(0.35, 0.5, 0.5, 24), M.dark, cx, 0.55, cz)
+    const beam = b.mesh(new THREE.CylinderGeometry(0.3, 0.45, 1.2, 24, 1, true),
+      new THREE.MeshBasicMaterial({ color: M.glowColor, transparent: true, opacity: 0.12, side: THREE.DoubleSide, depthWrite: false }), cx, 1.35, cz, { shadow: false })
+    beam.castShadow = false
+    b.centerGlobe = holoGlobe(b, cx, 2.3, cz, 0.85)
+  }
+}
+
+// Bus de la agencia estacionado afuera, frente a la fachada sur
+function bus(b, x, z) {
+  const M = mats()
+  const g = new THREE.Group()
+  g.position.set(x, 0, z)
+  b.group.add(g)
+  const p = { parent: g }
+  const side = new THREE.MeshStandardMaterial({ map: busTexture(TOSCANA), roughness: 0.4 })
+  const white = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.35 })
+  const glassDark = new THREE.MeshStandardMaterial({ color: '#1b2733', roughness: 0.15, metalness: 0.3 })
+  b.mesh(new THREE.BoxGeometry(4.4, 1.35, 1.15), [glassDark, white, white, white, side, side], 0, 0.95, 0, p)
+  b.mesh(new THREE.BoxGeometry(4.3, 0.05, 1.05), M.frame, 0, 1.65, 0, p)
+  for (const [wx, wz] of [[-1.4, 0.55], [1.4, 0.55], [-1.4, -0.55], [1.4, -0.55]]) {
+    const wheel = b.mesh(new THREE.CylinderGeometry(0.26, 0.26, 0.16, 20), M.dark, wx, 0.26, wz, p)
+    wheel.rotation.x = Math.PI / 2
+  }
+  b.block(x, z, 4.4, 1.15, 0, 0.2)
+}
+
+// Franjas de luz en la base de los muros (estilo cuartel)
+function neon(b, color, color2) {
+  const mat = (c) => new THREE.MeshStandardMaterial({ color: c, emissive: c, emissiveIntensity: 1.6 })
+  const a = mat(color), s = mat(color2 || color)
+  b.box(B.x1 - B.x0 - 0.4, 0.05, 0.05, a, 0, 0.05, B.z0 + 0.16, { shadow: false })
+  b.box(0.05, 0.05, B.z1 - B.z0 - 0.4, a, B.x0 + 0.16, 0.05, 0, { shadow: false })
+  b.box(B.x1 - B.x0 - 0.4, 0.04, 0.04, s, 0, 2.62, B.z1 - 0.05, { shadow: false })
+  b.box(0.04, 0.04, B.z1 - B.z0 - 0.4, s, B.x1 - 0.05, 2.62, 0, { shadow: false })
+  for (const r of ROOMS) b.box(r.x1 - r.x0 - 0.2, 0.04, 0.04, a, (r.x0 + r.x1) / 2, 0.04, NORTH_WALL_Z + 0.06, { shadow: false })
 }
 
 // ===== Escena =====
 export class OfficeScene {
-  constructor(container, { onHover, onSelect } = {}) {
+  constructor(container, { onHover, onSelect, theme = THEMES.clasico, logo } = {}) {
     this.container = container
+    this.theme = theme
     this.onHover = onHover
     this.onSelect = onSelect
     this.chars = new Map()
@@ -450,9 +555,12 @@ export class OfficeScene {
     container.appendChild(this.labels.domElement)
 
     this.scene = new THREE.Scene()
+    const luz = theme.luz || {}
+    if (luz.fondo) this.scene.background = new THREE.Color(luz.fondo)
+    if (luz.exposicion) this.renderer.toneMappingExposure = luz.exposicion
     const pmrem = new THREE.PMREMGenerator(this.renderer)
     this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture
-    this.scene.environmentIntensity = 0.55
+    this.scene.environmentIntensity = luz.entorno ?? 0.55
     pmrem.dispose()
 
     // Cámara isométrica fija (sin rotación)
@@ -479,8 +587,8 @@ export class OfficeScene {
     this.targetFocus = null
 
     // Iluminación: cielo suave + sol con sombras + entorno para reflejos
-    this.scene.add(new THREE.HemisphereLight('#ffffff', '#c8bfae', 0.45))
-    const sun = new THREE.DirectionalLight('#fff4e5', 2.6)
+    this.scene.add(new THREE.HemisphereLight(luz.cielo || '#ffffff', luz.suelo || '#c8bfae', luz.cieloI ?? 0.45))
+    const sun = new THREE.DirectionalLight(luz.sol || '#fff4e5', luz.solI ?? 2.6)
     sun.position.set(14, 26, 10)
     sun.castShadow = true
     sun.shadow.mapSize.set(this.highQuality ? 4096 : 2048, this.highQuality ? 4096 : 2048)
@@ -490,7 +598,7 @@ export class OfficeScene {
     this.scene.add(sun)
 
     this.nav = new NavGrid(B.x0, B.z0, B.x1, B.z1, 0.2)
-    this.builder = buildOffice(this.scene, this.nav)
+    this.builder = buildOffice(this.scene, this.nav, theme, logo)
     this.seats = this.builder.seats
     this.charGroup = new THREE.Group()
     this.scene.add(this.charGroup)
@@ -813,12 +921,20 @@ export class OfficeScene {
     for (const ch of this.chars.values()) {
       this.animateChar(ch, dt, t)
       if (!ch.route.length && ch.spot.screen && ch.activity === 'typing') {
-        ch.spot.screen.emissive.set(ch.place?.zone === 'lab' || ch.place?.type === 'coordinator' ? '#7c4dff' : '#3aa0ff')
+        ch.spot.screen.emissive.set(ch.place?.zone === 'lab' || ch.place?.type === 'coordinator' ? mats().glowColor : '#3aa0ff')
       }
     }
     // Anillo holográfico del escritorio del coordinador
     const ring = this.builder?.coordinatorRing
     if (ring) { ring.rotation.z += dt * 0.8; ring.position.y = 0.95 + Math.sin(t * 1.6) * 0.03 }
+    for (const globe of [this.builder?.coordinatorGlobe, this.builder?.centerGlobe]) {
+      if (!globe) continue
+      const u = globe.userData
+      u.lines.rotation.y += dt * 0.35
+      u.ring1.rotation.z += dt * 0.9
+      u.ring2.rotation.z -= dt * 0.6
+      globe.position.y = u.baseY + Math.sin(t * 1.3) * 0.04
+    }
 
     if (this.targetFocus) {
       const t0 = this.controls.target

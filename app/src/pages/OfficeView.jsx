@@ -8,10 +8,12 @@ import AgentModal, { AgentAvatar } from '../components/AgentModal.jsx'
 import AvatarModal from '../components/AvatarModal.jsx'
 import AgentChat from '../components/AgentChat.jsx'
 import { userLook } from '../components/LookEditor.jsx'
-import { BRAND, SUPER_ADMIN_EMAIL } from '../config.js'
+import { BRAND, SUPER_ADMIN_EMAIL, OFFICE_THEME } from '../config.js'
+import { officeTheme, vestir } from '../office/themes.js'
 import { wipLimitReached, WIP_LIMIT } from './KanbanView.jsx'
 
 const ONLINE_MS = 5 * 60 * 1000
+const THEME = officeTheme(OFFICE_THEME)
 // El coordinador (asistente personal) tiene escritorio propio y reparte el trabajo
 const isCoordinador = (a) => a?.kind === 'coordinador' || /coordinador|asistente personal/i.test(a?.role || '')
 const BREAKS = { cafe: { label: 'Tomando café', minutes: 3 }, bano: { label: 'En el baño', minutes: 3 } }
@@ -202,6 +204,7 @@ export default function OfficeView() {
     const scene = new OfficeScene(containerRef.current, {
       onHover: (id, x, y) => setHover(id ? { id, x, y } : null),
       onSelect: (id) => setSelectedId(id),
+      theme: THEME, logo: BRAND.logo,
     })
     sceneRef.current = scene
     return () => { scene.dispose(); sceneRef.current = null }
@@ -211,7 +214,7 @@ export default function OfficeView() {
     sceneRef.current?.setCharacters(characters.map(c => {
       const busy = errand?.who === c.id && byId[errand.to]
       return {
-        id: c.id, name: busy ? c.name + ' · ' + errand.label : c.name, look: c.look,
+        id: c.id, name: busy ? c.name + ' · ' + errand.label : c.name, look: c.kind === 'agente' ? vestir(c.look, THEME) : c.look,
         place: busy ? { type: 'visit', targetId: errand.to } : c.place,
         activity: busy ? 'carry' : c.activity,
         statusColor: STATUS[c.status].color,

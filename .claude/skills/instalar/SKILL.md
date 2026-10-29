@@ -93,8 +93,11 @@ Guíala paso a paso en https://console.firebase.google.com :
    iniciado sesión en Claude Code en este equipo, que ejecute en `motor/`: `npx claude auth login`
    (en Windows: `node_modules\.bin\claude.cmd auth login`).
 4. Según los roles elegidos:
-   - `editor_video`, `imagenes`, `diseno_web`, `flyers_toscana` o `itinerarios_toscana` → registra el servidor de medios:
+   - `editor_video`, `imagenes`, `diseno_web`, `flyers_toscana`, `itinerarios_toscana` o `redes_toscana` → registra el servidor de medios:
      `npx claude mcp add --scope user agentes-media -- node <ruta absoluta>/motor/media-server.mjs`
+   - `redes_toscana` o `flyers_toscana` → fotos y videos gratis de Pexels: que la persona cree una cuenta gratuita en
+     https://www.pexels.com/api/, pida su clave (API key) y la pegue ella misma en `PEXELS_API_KEY` de `motor/.env`
+     (no te la debe decir). Sin la clave, buscar_fotos y buscar_videos avisan que falta.
    - `diseno_web` → recomienda las Design Skills de typeui.sh (https://www.typeui.sh/design-skills, MIT, de sus autores).
      Si la persona las quiere, que las descargue desde ese sitio y copie cada carpeta de skill dentro de
      `motor/.claude/skills/`. No las copies tú desde otra fuente.

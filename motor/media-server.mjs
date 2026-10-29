@@ -657,28 +657,95 @@ server.tool('extraer_audio',
     } catch (e) { return fail(e) }
   })
 
-// ---------- Pexels: fotos y videos gratis con licencia para uso comercial ----------
-// La clave gratuita va en motor/.env (PEXELS_API_KEY). El agente nunca la ve.
-function pexelsKey() {
-  if (process.env.PEXELS_API_KEY) return process.env.PEXELS_API_KEY.trim()
+// ---------- Bancos gratis: Pixabay y Pexels (uso comercial sin pagar ni pedir permiso) ----------
+// Las claves gratuitas van en motor/.env (PIXABAY_API_KEY, PEXELS_API_KEY). El agente nunca las ve.
+function claveDe(nombre) {
+  if (process.env[nombre]) return process.env[nombre].trim()
   try {
-    const m = readFileSync(join(ROOT, '.env'), 'utf8').match(/^\s*PEXELS_API_KEY\s*=\s*(.*?)\s*$/m)
+    const m = readFileSync(join(ROOT, '.env'), 'utf8').match(new RegExp(`^\\s*${nombre}\\s*=\\s*(.*?)\\s*$`, 'm'))
     const k = (m?.[1] || '').replace(/^["']|["']$/g, '')
     return k.startsWith('PEGA_AQUI') ? '' : k
   } catch { return '' }
 }
 
-async function pexels(path, params) {
-  const key = pexelsKey()
-  if (!key) throw new Error('Falta la clave gratuita de Pexels (PEXELS_API_KEY en motor/.env). Dile al dueño que la agregue él mismo; nunca la pidas por el chat.')
-  const r = await fetch(`https://api.pexels.com/${path}?${new URLSearchParams(params)}`,
-    { headers: { Authorization: key }, signal: AbortSignal.timeout(60_000) })
-  if (!r.ok) throw new Error(`Pexels respondió ${r.status}` +
-    ({ 401: ' (la clave no es válida)', 403: ' (la clave no es válida)', 429: ' (se acabaron las búsquedas de esta hora; espera un rato)' }[r.status] || ''))
+async function pedirJson(banco, url, headers = {}) {
+  const r = await fetch(url, { headers, signal: AbortSignal.timeout(60_000) })
+  if (!r.ok) throw new Error(`${banco} respondió ${r.status}` +
+    ({ 400: ' (revisa la clave)', 401: ' (la clave no es válida)', 403: ' (la clave no es válida)', 429: ' (demasiadas búsquedas seguidas; espera un rato)' }[r.status] || ''))
   return r.json()
 }
 
-const ORIENTACION = { vertical: 'portrait', horizontal: 'landscape', cuadrada: 'square' }
+const ORIENTACION_PEXELS = { vertical: 'portrait', horizontal: 'landscape', cuadrada: 'square' }
+const ORIENTACION_PIXABAY = { vertical: 'vertical', horizontal: 'horizontal', cuadrada: 'all' }
+// Lo más liviano que llegue a 1080 en su lado corto; si no hay, lo más grande
+const mejorArchivo = (lista) => {
+  const ok = lista.filter(f => f.url && f.width && f.height)
+  const area = (f) => f.width * f.height
+  return ok.filter(f => Math.min(f.width, f.height) >= 1080).sort((a, b) => area(a) - area(b))[0] || ok.sort((a, b) => area(b) - area(a))[0]
+}
+
+// Cada banco devuelve una lista igual: { archivo, url, width, height, desc, pagina, credito, segundos? }
+const BANCOS = {
+  pixabay: {
+    nombre: 'Pixabay', clave: 'PIXABAY_API_KEY',
+    async fotos(key, q, n, o) {
+      const d = await pedirJson('Pixabay', `https://pixabay.com/api/?${new URLSearchParams({ key, q, image_type: 'photo', orientation: ORIENTACION_PIXABAY[o], per_page: String(Math.max(3, n)), safesearch: 'true' })}`)
+      return (d.hits || []).slice(0, n).map(h => ({
+        archivo: `pixabay foto ${h.id}.jpg`, url: h.largeImageURL || h.webformatURL, width: h.imageWidth, height: h.imageHeight,
+        desc: h.tags, pagina: h.pageURL, credito: `Foto de ${h.user} en Pixabay`,
+      }))
+    },
+    async videos(key, q, n) {
+      const d = await pedirJson('Pixabay', `https://pixabay.com/api/videos/?${new URLSearchParams({ key, q, video_type: 'film', per_page: String(Math.max(3, n)), safesearch: 'true' })}`)
+      return (d.hits || []).slice(0, n).map(h => {
+        const f = mejorArchivo(Object.values(h.videos || {}))
+        return f && { archivo: `pixabay video ${h.id}.mp4`, url: f.url, width: f.width, height: f.height, segundos: h.duration,
+          desc: h.tags, pagina: h.pageURL, credito: `Video de ${h.user} en Pixabay` }
+      }).filter(Boolean)
+    },
+  },
+  pexels: {
+    nombre: 'Pexels', clave: 'PEXELS_API_KEY',
+    async fotos(key, q, n, o) {
+      const d = await pedirJson('Pexels', `https://api.pexels.com/v1/search?${new URLSearchParams({ query: q, per_page: String(n), orientation: ORIENTACION_PEXELS[o] })}`, { Authorization: key })
+      return (d.photos || []).map(p => ({
+        // Lado corto a 2200 px: suficiente para 1080x1920 con zoom, sin bajar el original de 20 MB
+        archivo: `pexels foto ${p.id}.jpg`, url: `${p.src.original}?auto=compress&cs=tinysrgb&${p.width >= p.height ? 'h' : 'w'}=2200`,
+        width: p.width, height: p.height, desc: p.alt || 'sin descripción', pagina: p.url, credito: `Foto de ${p.photographer} en Pexels`,
+      }))
+    },
+    async videos(key, q, n, o) {
+      const d = await pedirJson('Pexels', `https://api.pexels.com/videos/search?${new URLSearchParams({ query: q, per_page: String(n), orientation: ORIENTACION_PEXELS[o], size: 'medium' })}`, { Authorization: key })
+      return (d.videos || []).map(v => {
+        const f = mejorArchivo((v.video_files || []).filter(x => x.file_type === 'video/mp4').map(x => ({ ...x, url: x.link })))
+        // Pexels no da descripción de videos: la sacamos de su dirección (…/video/aerial-view-of-cartagena-123/)
+        const desc = (v.url || '').split('/').filter(Boolean).pop()?.replace(/-?\d+$/, '').replace(/-/g, ' ') || 'sin descripción'
+        return f && { archivo: `pexels video ${v.id}.mp4`, url: f.url, width: f.width, height: f.height, segundos: v.duration,
+          desc, pagina: v.url, credito: `Video de ${v.user?.name || 'autor de Pexels'} en Pexels` }
+      }).filter(Boolean)
+    },
+  },
+}
+
+// Busca en los bancos que tengan clave, en orden, hasta juntar la cantidad pedida, y descarga a Entrada
+async function buscarEnBancos(tipo, busqueda, cantidad, orientacion, agente) {
+  const activos = Object.values(BANCOS).filter(b => claveDe(b.clave))
+  if (!activos.length) throw new Error('Falta la clave gratuita de Pixabay (PIXABAY_API_KEY en motor/.env). Dile al dueño que la agregue él mismo; nunca la pidas por el chat.')
+  const lines = [], errores = []
+  for (const b of activos) {
+    if (lines.length >= cantidad) break
+    let items
+    try { items = await b[tipo](claveDe(b.clave), busqueda, cantidad - lines.length, orientacion) } catch (e) { errores.push(e.message); continue }
+    for (const it of items) {
+      const dest = join(entradaDir(agente), it.archivo)
+      if (!existsSync(dest)) await download(it.url, dest)
+      anotarCredito(agente, dest, it.credito)
+      lines.push(`- ${it.archivo} · ${it.width}x${it.height}${it.segundos ? ` · ${it.segundos} s` : ''} · "${it.desc}" · ${it.pagina}`)
+    }
+  }
+  if (!lines.length && errores.length) throw new Error(errores.join(' · '))
+  return lines
+}
 
 function entradaDir(agente) {
   const dir = join(agentDir(agente), 'Entrada')
@@ -697,7 +764,7 @@ function anotarCredito(agente, archivo, linea) {
 }
 
 server.tool('buscar_fotos',
-  'Busca fotos en Pexels (gratis y con licencia para uso comercial) y las descarga a tu carpeta Entrada. Usa SOLO esta herramienta (o buscar_videos) para conseguir fotos: nunca descargues imágenes de otras páginas. Lee la descripción de cada foto: si no muestra el lugar exacto, no la uses para ese lugar.',
+  'Busca fotos en bancos gratis con licencia para uso comercial (Pixabay y Pexels) y las descarga a tu carpeta Entrada. Usa SOLO esta herramienta (o buscar_videos) para conseguir fotos: nunca descargues imágenes de otras páginas. Lee la descripción de cada foto: si no muestra el lugar exacto, no la uses para ese lugar.',
   {
     busqueda: z.string().describe('Qué buscar. Funciona mejor en inglés y con el nombre del lugar, p. ej. "Villa de Leyva square" o "Cartagena walled city"'),
     cantidad: z.number().int().min(1).max(10).default(5),
@@ -706,50 +773,25 @@ server.tool('buscar_fotos',
   },
   async ({ busqueda, cantidad, orientacion, agente }) => {
     try {
-      const data = await pexels('v1/search', { query: busqueda, per_page: String(cantidad), orientation: ORIENTACION[orientacion] })
-      const fotos = data.photos || []
-      if (!fotos.length) return ok(`Pexels no tiene fotos para "${busqueda}". Prueba otras palabras (en inglés) o la ciudad en vez del sitio exacto.`)
-      const lines = []
-      for (const p of fotos) {
-        const dest = join(entradaDir(agente), `pexels foto ${p.id}.jpg`)
-        // Lado corto a 2200 px: suficiente para 1080x1920 con zoom, sin bajar el original de 20 MB
-        if (!existsSync(dest)) await download(`${p.src.original}?auto=compress&cs=tinysrgb&${p.width >= p.height ? 'h' : 'w'}=2200`, dest)
-        anotarCredito(agente, dest, `Foto de ${p.photographer} en Pexels`)
-        lines.push(`- ${basename(dest)} · ${p.width}x${p.height} · "${p.alt || 'sin descripción'}" · ${p.url}`)
-      }
-      return ok(`${fotos.length} fotos de "${busqueda}" en ${entradaDir(agente)}:\n${lines.join('\n')}\n\nÚsalas por su nombre de archivo. Licencia Pexels: uso comercial gratis, sin pedir permiso.`)
+      const lines = await buscarEnBancos('fotos', busqueda, cantidad, orientacion, agente)
+      if (!lines.length) return ok(`No encontré fotos de "${busqueda}". Prueba otras palabras (en inglés) o la ciudad en vez del sitio exacto.`)
+      return ok(`${lines.length} fotos de "${busqueda}" en ${entradaDir(agente)}:\n${lines.join('\n')}\n\nÚsalas por su nombre de archivo. Licencia: uso comercial gratis, sin pedir permiso.`)
     } catch (e) { return fail(e) }
   })
 
 server.tool('buscar_videos',
-  'Busca videos cortos en Pexels (gratis y con licencia para uso comercial) y los descarga a tu carpeta Entrada en Full HD. Lee la descripción de cada video: si no muestra el lugar exacto, no lo uses para ese lugar.',
+  'Busca videos cortos en bancos gratis con licencia para uso comercial (Pixabay y Pexels) y los descarga a tu carpeta Entrada en Full HD. Lee la descripción de cada video: si no muestra el lugar exacto, no lo uses para ese lugar.',
   {
     busqueda: z.string().describe('Qué buscar. Funciona mejor en inglés y con el nombre del lugar, p. ej. "Santa Marta beach aerial"'),
     cantidad: z.number().int().min(1).max(6).default(3),
-    orientacion: z.enum(['vertical', 'horizontal', 'cuadrada']).default('vertical'),
+    orientacion: z.enum(['vertical', 'horizontal', 'cuadrada']).default('vertical').describe('Pixabay no filtra por orientación; crear_reel recorta al formato'),
     agente: agenteParam,
   },
   async ({ busqueda, cantidad, orientacion, agente }) => {
     try {
-      const data = await pexels('videos/search', { query: busqueda, per_page: String(cantidad), orientation: ORIENTACION[orientacion], size: 'medium' })
-      const videos = data.videos || []
-      if (!videos.length) return ok(`Pexels no tiene videos para "${busqueda}". Prueba otras palabras, busca fotos con buscar_fotos o usa un video general de la ciudad.`)
-      const lines = []
-      for (const v of videos) {
-        const mp4 = (v.video_files || []).filter(f => f.file_type === 'video/mp4' && f.width && f.height)
-        const area = (f) => f.width * f.height
-        // El archivo más liviano que llegue a 1080 en su lado corto; si no hay, el más grande
-        const file = mp4.filter(f => Math.min(f.width, f.height) >= 1080).sort((a, b) => area(a) - area(b))[0]
-          || mp4.sort((a, b) => area(b) - area(a))[0]
-        if (!file) continue
-        const dest = join(entradaDir(agente), `pexels video ${v.id}.mp4`)
-        if (!existsSync(dest)) await download(file.link, dest)
-        anotarCredito(agente, dest, `Video de ${v.user?.name || 'autor de Pexels'} en Pexels`)
-        // Pexels no da descripción de videos: la sacamos de su dirección (…/video/aerial-view-of-cartagena-123/)
-        const desc = (v.url || '').split('/').filter(Boolean).pop()?.replace(/-?\d+$/, '').replace(/-/g, ' ') || 'sin descripción'
-        lines.push(`- ${basename(dest)} · ${file.width}x${file.height} · ${v.duration} s · "${desc}" · ${v.url}`)
-      }
-      return ok(`${lines.length} videos de "${busqueda}" en ${entradaDir(agente)}:\n${lines.join('\n')}\n\nÚsalos por su nombre de archivo. Licencia Pexels: uso comercial gratis, sin pedir permiso.`)
+      const lines = await buscarEnBancos('videos', busqueda, cantidad, orientacion, agente)
+      if (!lines.length) return ok(`No encontré videos de "${busqueda}". Prueba otras palabras, busca fotos con buscar_fotos o usa un video general de la ciudad.`)
+      return ok(`${lines.length} videos de "${busqueda}" en ${entradaDir(agente)}:\n${lines.join('\n')}\n\nÚsalos por su nombre de archivo. Licencia: uso comercial gratis, sin pedir permiso.`)
     } catch (e) { return fail(e) }
   })
 

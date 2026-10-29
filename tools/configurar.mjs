@@ -35,6 +35,7 @@ writeFileSync(join(ROOT, 'app', '.env'), [
   `VITE_BRAND_COLOR=${color}`,
   `VITE_LOGO_URL=${r.negocio?.logo || '/logo.svg'}`,
   `VITE_LOGO_DARK_URL=${r.negocio?.logoOscuro || r.negocio?.logo || '/logo.svg'}`,
+  `VITE_OFFICE_THEME=${r.negocio?.temaOficina || 'clasico'}`,
   `VITE_APP_URL=${url}`,
   `VITE_SUPER_ADMIN_EMAIL=${r.dueno.email.toLowerCase()}`,
   `VITE_FIREBASE_API_KEY=${fb.apiKey}`,

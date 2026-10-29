@@ -7,6 +7,7 @@ import Icon from '../components/Icons.jsx'
 import AgentModal, { AgentAvatar } from '../components/AgentModal.jsx'
 import AvatarModal from '../components/AvatarModal.jsx'
 import AgentChat from '../components/AgentChat.jsx'
+import CreateBar from '../components/CreateBar.jsx'
 import { userLook } from '../components/LookEditor.jsx'
 import { BRAND, SUPER_ADMIN_EMAIL, OFFICE_THEME } from '../config.js'
 import { officeTheme, vestir } from '../office/themes.js'
@@ -323,6 +324,8 @@ export default function OfficeView() {
           </div>
         )}
       </div>
+
+      {isAdmin && <CreateBar agents={agents} userEmail={user.email} showToast={showToast} />}
 
       <div className="office-layout">
         {/* ===== Panel lateral ===== */}

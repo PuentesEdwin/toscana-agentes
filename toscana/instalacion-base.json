@@ -8,7 +8,8 @@
     "color": "#156d54",
     "idioma": "español",
     "logo": "/logo.png",
-    "logoOscuro": "/logo-blanco.png"
+    "logoOscuro": "/logo-blanco.png",
+    "temaOficina": "torre"
   },
   "dueno": { "nombre": "Edwin Puentes", "email": "" },
   "app": { "nombre": "Toscana Tours · Oficina" },

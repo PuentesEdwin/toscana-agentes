@@ -3,7 +3,7 @@
 //
 // instalacion.json (lo escribe Claude durante la entrevista; NO lleva contraseñas):
 // {
-//   "negocio": { "nombre", "descripcion", "identidad", "tono", "color", "idioma", "logo" },
+//   "negocio": { "nombre", "descripcion", "identidad", "tono", "color", "idioma", "logo", "logoOscuro?" },
 //   "dueno": { "nombre", "email" },
 //   "app": { "nombre": "Nombre de la app" },
 //   "firebase": { "apiKey", "authDomain", "projectId", "storageBucket", "messagingSenderId", "appId" },
@@ -34,6 +34,7 @@ writeFileSync(join(ROOT, 'app', '.env'), [
   `VITE_COMPANY_NAME=${r.negocio?.nombre || 'Mi empresa'}`,
   `VITE_BRAND_COLOR=${color}`,
   `VITE_LOGO_URL=${r.negocio?.logo || '/logo.svg'}`,
+  `VITE_LOGO_DARK_URL=${r.negocio?.logoOscuro || r.negocio?.logo || '/logo.svg'}`,
   `VITE_APP_URL=${url}`,
   `VITE_SUPER_ADMIN_EMAIL=${r.dueno.email.toLowerCase()}`,
   `VITE_FIREBASE_API_KEY=${fb.apiKey}`,

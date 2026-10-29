@@ -63,8 +63,10 @@ Guíala paso a paso en https://console.firebase.google.com :
 4. **Authentication → Usuarios → Agregar usuario:** el **robot del motor**. Sugiere un alias de su Gmail,
    por ejemplo `sunombre+agentes@gmail.com` (no hay que crear ningún correo nuevo), y que invente una
    contraseña larga. **No te la debe decir.**
-5. **Authentication → Configuración → Acciones del usuario:** desmarcar "Habilitar creación (registro)"
-   para que nadie más pueda crear cuentas con correo.
+5. **Authentication → Configuración → Acciones del usuario:** dejar **marcada** "Habilitar creación (registro)".
+   Si se desmarca, Firebase bloquea también la primera entrada con Google (error `auth/admin-restricted-operation`)
+   y ni el dueño ni el equipo pueden entrar. Las cuentas nuevas quedan "pendientes" y las reglas de Firestore
+   no les dejan leer nada hasta que un administrador las apruebe.
 6. **Firestore Database → Crear base de datos:** modo producción, la ubicación más cercana.
 
 ## Fase 3 · Configurar

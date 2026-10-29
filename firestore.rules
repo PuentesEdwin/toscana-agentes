@@ -21,15 +21,20 @@ service cloud.firestore {
     function isAgentBot() {
       return isAuth() && request.auth.token.email == '__CORREO_ROBOT__';
     }
+    // Solo el equipo aprobado y el robot ven datos. Una cuenta nueva queda
+    // "pendiente" y no lee nada hasta que el administrador la apruebe.
+    function canRead() {
+      return isActiveUser() || isAgentBot();
+    }
     function isAgentTask(data) {
       return exists(/databases/$(database)/documents/agents/$(data.asignado));
     }
 
-    // Users: lectura para autenticados; escritura propia o de admin.
+    // Users: cada quien lee su perfil; el equipo aprobado lee todos. Escritura propia o de admin.
     // CANDADO ANTI-FANTASMA: crear un usuario exige incluir el email real
     // de la cuenta de Google — imposible crear docs sin identidad.
     match /users/{userId} {
-      allow read: if isAuth();
+      allow read: if isAuth() && (request.auth.uid == userId || canRead());
       allow create: if isAuth() && request.auth.uid == userId
         && request.resource.data.email == request.auth.token.email;
       allow update: if isAuth() && (
@@ -42,7 +47,7 @@ service cloud.firestore {
 
     // Tasks: todos los activos leen; empleados editan solo las suyas; solo admin elimina
     match /tasks/{taskId} {
-      allow read: if isAuth();
+      allow read: if canRead();
       // El coordinador (vía el robot) solo puede crear tareas asignadas a agentes
       allow create: if isActiveUser() || (isAgentBot() && isAgentTask(request.resource.data));
       allow update: if isAuth() && (
@@ -59,28 +64,28 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    // Config (lista de clientes): leer todos, escribir solo admin
+    // Config (lista de clientes): leer el equipo, escribir solo admin
     match /config/{docId} {
-      allow read: if isAuth();
+      allow read: if canRead();
       allow write: if isAdmin() || (isAgentBot() && docId == 'agentWorker');
     }
 
     // Invitaciones: solo admins gestionan; el invitado necesita leer/borrar la suya al registrarse
     match /invites/{email} {
-      allow read, delete: if isAuth();
+      allow read, delete: if isAdmin() || (isAuth() && request.auth.token.email.lower() == email);
       allow create, update: if isAdmin();
     }
 
     // Muro de discusión del equipo
     match /discussions/{postId} {
-      allow read: if isAuth();
+      allow read: if canRead();
       allow create, update: if isActiveUser();
       allow delete: if isAuth() && (isAdmin() || resource.data.uid == request.auth.uid);
     }
 
     // Discusión (muro público interno)
     match /posts/{postId} {
-      allow read: if isAuth();
+      allow read: if canRead();
       allow create: if isActiveUser();
       allow update: if isActiveUser();
       allow delete: if isAuth() && (isAdmin() || resource.data.authorUid == request.auth.uid);
@@ -88,7 +93,7 @@ service cloud.firestore {
 
     // Agentes de IA: todos los ven en la oficina; solo administradores los gestionan
     match /agents/{agentId} {
-      allow read: if isAuth();
+      allow read: if canRead();
       allow write: if isAdmin();
       // El instalador crea los agentes iniciales a través del robot del motor
       allow create: if isAgentBot();
@@ -104,18 +109,18 @@ service cloud.firestore {
 
     // Registro de horas trabajadas por día
     match /worklog/{logId} {
-      allow read: if isAuth();
+      allow read: if canRead();
       allow create, update: if isActiveUser();
       allow delete: if isAdmin();
     }
 
     // Chat privado
     match /chats/{chatId} {
-      allow read: if isAuth();
+      allow read: if canRead();
       allow write: if isActiveUser() && chatId.matches('.*' + request.auth.uid + '.*');
 
       match /messages/{msgId} {
-        allow read: if isAuth() && chatId.matches('.*' + request.auth.uid + '.*');
+        allow read: if canRead() && chatId.matches('.*' + request.auth.uid + '.*');
         allow create: if isActiveUser()
           && chatId.matches('.*' + request.auth.uid + '.*')
           && request.resource.data.from == request.auth.uid;

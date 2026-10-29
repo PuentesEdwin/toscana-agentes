@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, createContext, useContext } from 'react'
 import { auth, db, googleProvider } from './firebase.js'
-import { onAuthStateChanged, signInWithPopup, signOut } from 'firebase/auth'
+import { onAuthStateChanged, signInWithPopup, signInWithRedirect, getRedirectResult, signOut } from 'firebase/auth'
 import { doc, getDoc, setDoc, deleteDoc, serverTimestamp, collection, onSnapshot, orderBy, query, getDocs } from 'firebase/firestore'
 
 import LoginPage from './pages/LoginPage.jsx'
@@ -51,6 +51,7 @@ export default function App() {
   const [page, setPage] = useState(null) // null hasta conocer el rol
   const [theme, setTheme] = useState(localStorage.getItem('theme') || 'light')
   const [toast, setToast] = useState(null)
+  const [loginError, setLoginError] = useState('')
   const [showTutorial, setShowTutorial] = useState(false)
   const [taskFormOpen, setTaskFormOpen] = useState(false)
   const [editingTask, setEditingTask] = useState(null)
@@ -64,6 +65,10 @@ export default function App() {
   }, [theme])
 
   useEffect(() => {
+    getRedirectResult(auth).catch(e => {
+      console.error('Inicio de sesión (redirección):', e)
+      setLoginError(`No se pudo iniciar sesión (${e.code || e.message}).`)
+    })
     const unsub = onAuthStateChanged(auth, async (u) => {
       if (u) {
         setUser(u)
@@ -219,11 +224,21 @@ export default function App() {
   }
 
   const handleLogin = async () => {
+    setLoginError('')
     try {
       await signInWithPopup(auth, googleProvider)
       requestNotifPermission()
     } catch (e) {
-      showToast('Error al iniciar sesión', 'error')
+      console.error('Inicio de sesión:', e)
+      // Si el navegador no deja abrir la ventana de Google, entra en la misma pestaña
+      if (['auth/popup-blocked', 'auth/operation-not-supported-in-this-environment', 'auth/web-storage-unsupported'].includes(e.code)) {
+        try { await signInWithRedirect(auth, googleProvider); return } catch (e2) { e = e2 }
+      }
+      if (e.code === 'auth/popup-closed-by-user' || e.code === 'auth/cancelled-popup-request') {
+        setLoginError('Se cerró la ventana de Google antes de terminar. Intenta de nuevo.')
+      } else {
+        setLoginError(`No se pudo iniciar sesión (${e.code || e.message}).`)
+      }
     }
   }
 
@@ -250,7 +265,7 @@ export default function App() {
     )
   }
 
-  if (!user) return <LoginPage onLogin={handleLogin} theme={theme} />
+  if (!user) return <LoginPage onLogin={handleLogin} theme={theme} error={loginError} />
 
   const realIsAdmin = userProfile?.role === 'admin'
   const isPending = userProfile?.role === 'pending'

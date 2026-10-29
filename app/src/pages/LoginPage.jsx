@@ -2,7 +2,7 @@ import React from 'react'
 import { BRAND } from '../config.js'
 import { APP_VERSION } from '../App.jsx'
 
-export default function LoginPage({ onLogin, theme }) {
+export default function LoginPage({ onLogin, theme, error }) {
   return (
     <div className="login-page" data-theme={theme || 'dark'}>
       <div className="login-card">
@@ -40,6 +40,12 @@ export default function LoginPage({ onLogin, theme }) {
           </svg>
           Continuar con Google
         </button>
+
+        {error && (
+          <p role="alert" style={{ fontSize: 13, color: 'var(--danger, #d9443a)', marginTop: 16, lineHeight: 1.5 }}>
+            {error}
+          </p>
+        )}
 
         <p style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 24, lineHeight: 1.5 }}>
           Acceso restringido al equipo de {BRAND.company}.<br />

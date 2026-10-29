@@ -446,7 +446,13 @@ function hyperframes(args, cwd) {
     p.stderr.on('data', d => { out += d })
     p.stdin.end()
     const timer = setTimeout(() => p.kill(), 20 * 60 * 1000)
-    p.on('close', code => { clearTimeout(timer); code === 0 ? res(out) : rej(new Error(out.split('\n').filter(l => /error|Error|✖|failed/i.test(l)).slice(-8).join('\n') || out.slice(-1500))) })
+    p.on('close', code => {
+      clearTimeout(timer)
+      if (code === 0) return res(out)
+      const err = new Error(out.split('\n').filter(l => /error|Error|✖|failed/i.test(l)).slice(-8).join('\n') || out.slice(-1500))
+      err.output = out // salida completa, para que el agente vea cada error y su línea
+      rej(err)
+    })
   })
 }
 
@@ -471,9 +477,13 @@ server.tool('render_animacion',
       }
       writeFileSync(join(dir, 'index.html'), html)
       let lint = ''
-      try { lint = await hyperframes(['lint'], dir) } catch (e) { lint = e.message }
+      try { lint = await hyperframes(['lint'], dir) } catch (e) { lint = e.output || e.message }
       const dest = outPath(agente, nombre, '.' + formato)
-      await hyperframes(['render', '--output', `"${dest}"`, ...(formato === 'webm' ? ['--format', 'webm'] : [])], dir)
+      try {
+        await hyperframes(['render', '--output', `"${dest}"`, ...(formato === 'webm' ? ['--format', 'webm'] : [])], dir)
+      } catch (e) {
+        return fail(`El render falló.\n${(e.output || e.message).slice(-3000)}\n\nResultado completo de lint:\n${lint.slice(-3000)}\n\nCorrige el index.html y vuelve a llamar render_animacion con el mismo proyecto.`)
+      }
       if (!existsSync(dest)) return fail('El render terminó sin archivo de salida. Revisa la composición.\n' + lint.slice(-1500))
       return ok(`Animación renderizada: ${dest}\nDuración: ${(await duration(dest)).toFixed(1)} s\nProyecto: ${dir}\nLint: ${lint.split('\n').filter(l => /error|warning/i.test(l)).slice(0, 6).join(' | ') || 'sin observaciones'}`)
     } catch (e) { return fail(e) }

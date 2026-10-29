@@ -8,7 +8,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
 import ffmpegPath from 'ffmpeg-static'
 import { spawn } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, statSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, statSync, copyFileSync } from 'node:fs'
 import { join, dirname, basename, extname, isAbsolute, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import dns from 'node:dns'
@@ -446,7 +446,13 @@ function hyperframes(args, cwd) {
     p.stderr.on('data', d => { out += d })
     p.stdin.end()
     const timer = setTimeout(() => p.kill(), 20 * 60 * 1000)
-    p.on('close', code => { clearTimeout(timer); code === 0 ? res(out) : rej(new Error(out.split('\n').filter(l => /error|Error|✖|failed/i.test(l)).slice(-8).join('\n') || out.slice(-1500))) })
+    p.on('close', code => {
+      clearTimeout(timer)
+      if (code === 0) return res(out)
+      const err = new Error(out.split('\n').filter(l => /error|Error|✖|failed/i.test(l)).slice(-8).join('\n') || out.slice(-1500))
+      err.output = out // salida completa, para que el agente vea cada error y su línea
+      rej(err)
+    })
   })
 }
 
@@ -471,9 +477,13 @@ server.tool('render_animacion',
       }
       writeFileSync(join(dir, 'index.html'), html)
       let lint = ''
-      try { lint = await hyperframes(['lint'], dir) } catch (e) { lint = e.message }
+      try { lint = await hyperframes(['lint'], dir) } catch (e) { lint = e.output || e.message }
       const dest = outPath(agente, nombre, '.' + formato)
-      await hyperframes(['render', '--output', `"${dest}"`, ...(formato === 'webm' ? ['--format', 'webm'] : [])], dir)
+      try {
+        await hyperframes(['render', '--output', `"${dest}"`, ...(formato === 'webm' ? ['--format', 'webm'] : [])], dir)
+      } catch (e) {
+        return fail(`El render falló.\n${(e.output || e.message).slice(-3000)}\n\nResultado completo de lint:\n${lint.slice(-3000)}\n\nCorrige el index.html y vuelve a llamar render_animacion con el mismo proyecto.`)
+      }
       if (!existsSync(dest)) return fail('El render terminó sin archivo de salida. Revisa la composición.\n' + lint.slice(-1500))
       return ok(`Animación renderizada: ${dest}\nDuración: ${(await duration(dest)).toFixed(1)} s\nProyecto: ${dir}\nLint: ${lint.split('\n').filter(l => /error|warning/i.test(l)).slice(0, 6).join(' | ') || 'sin observaciones'}`)
     } catch (e) { return fail(e) }
@@ -644,6 +654,283 @@ server.tool('extraer_audio',
       const dest = outPath(agente, `${basename(f, extname(f))} audio`, '.mp3')
       await ffmpeg(['-i', f, '-vn', '-c:a', 'libmp3lame', '-q:a', '2', dest])
       return ok(`Audio: ${dest}`)
+    } catch (e) { return fail(e) }
+  })
+
+// ---------- Bancos gratis: Pixabay y Pexels (uso comercial sin pagar ni pedir permiso) ----------
+// Las claves gratuitas van en motor/.env (PIXABAY_API_KEY, PEXELS_API_KEY). El agente nunca las ve.
+function claveDe(nombre) {
+  if (process.env[nombre]) return process.env[nombre].trim()
+  try {
+    const m = readFileSync(join(ROOT, '.env'), 'utf8').match(new RegExp(`^\\s*${nombre}\\s*=\\s*(.*?)\\s*$`, 'm'))
+    const k = (m?.[1] || '').replace(/^["']|["']$/g, '')
+    return k.startsWith('PEGA_AQUI') ? '' : k
+  } catch { return '' }
+}
+
+async function pedirJson(banco, url, headers = {}) {
+  const r = await fetch(url, { headers, signal: AbortSignal.timeout(60_000) })
+  if (!r.ok) throw new Error(`${banco} respondió ${r.status}` +
+    ({ 400: ' (revisa la clave)', 401: ' (la clave no es válida)', 403: ' (la clave no es válida)', 429: ' (demasiadas búsquedas seguidas; espera un rato)' }[r.status] || ''))
+  return r.json()
+}
+
+const ORIENTACION_PEXELS = { vertical: 'portrait', horizontal: 'landscape', cuadrada: 'square' }
+const ORIENTACION_PIXABAY = { vertical: 'vertical', horizontal: 'horizontal', cuadrada: 'all' }
+// Lo más liviano que llegue a 1080 en su lado corto; si no hay, lo más grande
+const mejorArchivo = (lista) => {
+  const ok = lista.filter(f => f.url && f.width && f.height)
+  const area = (f) => f.width * f.height
+  return ok.filter(f => Math.min(f.width, f.height) >= 1080).sort((a, b) => area(a) - area(b))[0] || ok.sort((a, b) => area(b) - area(a))[0]
+}
+
+// Cada banco devuelve una lista igual: { archivo, url, width, height, desc, pagina, credito, segundos? }
+const BANCOS = {
+  pixabay: {
+    nombre: 'Pixabay', clave: 'PIXABAY_API_KEY',
+    async fotos(key, q, n, o) {
+      const d = await pedirJson('Pixabay', `https://pixabay.com/api/?${new URLSearchParams({ key, q, image_type: 'photo', orientation: ORIENTACION_PIXABAY[o], per_page: String(Math.max(3, n)), safesearch: 'true' })}`)
+      return (d.hits || []).slice(0, n).map(h => ({
+        archivo: `pixabay foto ${h.id}.jpg`, url: h.largeImageURL || h.webformatURL, width: h.imageWidth, height: h.imageHeight,
+        desc: h.tags, pagina: h.pageURL, credito: `Foto de ${h.user} en Pixabay`,
+      }))
+    },
+    async videos(key, q, n) {
+      const d = await pedirJson('Pixabay', `https://pixabay.com/api/videos/?${new URLSearchParams({ key, q, video_type: 'film', per_page: String(Math.max(3, n)), safesearch: 'true' })}`)
+      return (d.hits || []).slice(0, n).map(h => {
+        const f = mejorArchivo(Object.values(h.videos || {}))
+        return f && { archivo: `pixabay video ${h.id}.mp4`, url: f.url, width: f.width, height: f.height, segundos: h.duration,
+          desc: h.tags, pagina: h.pageURL, credito: `Video de ${h.user} en Pixabay` }
+      }).filter(Boolean)
+    },
+  },
+  pexels: {
+    nombre: 'Pexels', clave: 'PEXELS_API_KEY',
+    async fotos(key, q, n, o) {
+      const d = await pedirJson('Pexels', `https://api.pexels.com/v1/search?${new URLSearchParams({ query: q, per_page: String(n), orientation: ORIENTACION_PEXELS[o] })}`, { Authorization: key })
+      return (d.photos || []).map(p => ({
+        // Lado corto a 2200 px: suficiente para 1080x1920 con zoom, sin bajar el original de 20 MB
+        archivo: `pexels foto ${p.id}.jpg`, url: `${p.src.original}?auto=compress&cs=tinysrgb&${p.width >= p.height ? 'h' : 'w'}=2200`,
+        width: p.width, height: p.height, desc: p.alt || 'sin descripción', pagina: p.url, credito: `Foto de ${p.photographer} en Pexels`,
+      }))
+    },
+    async videos(key, q, n, o) {
+      const d = await pedirJson('Pexels', `https://api.pexels.com/videos/search?${new URLSearchParams({ query: q, per_page: String(n), orientation: ORIENTACION_PEXELS[o], size: 'medium' })}`, { Authorization: key })
+      return (d.videos || []).map(v => {
+        const f = mejorArchivo((v.video_files || []).filter(x => x.file_type === 'video/mp4').map(x => ({ ...x, url: x.link })))
+        // Pexels no da descripción de videos: la sacamos de su dirección (…/video/aerial-view-of-cartagena-123/)
+        const desc = (v.url || '').split('/').filter(Boolean).pop()?.replace(/-?\d+$/, '').replace(/-/g, ' ') || 'sin descripción'
+        return f && { archivo: `pexels video ${v.id}.mp4`, url: f.url, width: f.width, height: f.height, segundos: v.duration,
+          desc, pagina: v.url, credito: `Video de ${v.user?.name || 'autor de Pexels'} en Pexels` }
+      }).filter(Boolean)
+    },
+  },
+}
+
+// Busca en los bancos que tengan clave, en orden, hasta juntar la cantidad pedida, y descarga a Entrada
+async function buscarEnBancos(tipo, busqueda, cantidad, orientacion, agente) {
+  const activos = Object.values(BANCOS).filter(b => claveDe(b.clave))
+  if (!activos.length) throw new Error('Falta la clave gratuita de Pixabay (PIXABAY_API_KEY en motor/.env). Dile al dueño que la agregue él mismo; nunca la pidas por el chat.')
+  const lines = [], errores = []
+  for (const b of activos) {
+    if (lines.length >= cantidad) break
+    let items
+    try { items = await b[tipo](claveDe(b.clave), busqueda, cantidad - lines.length, orientacion) } catch (e) { errores.push(e.message); continue }
+    for (const it of items) {
+      const dest = join(entradaDir(agente), it.archivo)
+      if (!existsSync(dest)) await download(it.url, dest)
+      anotarCredito(agente, dest, it.credito)
+      lines.push(`- ${it.archivo} · ${it.width}x${it.height}${it.segundos ? ` · ${it.segundos} s` : ''} · "${it.desc}" · ${it.pagina}`)
+    }
+  }
+  if (!lines.length && errores.length) throw new Error(errores.join(' · '))
+  return lines
+}
+
+function entradaDir(agente) {
+  const dir = join(agentDir(agente), 'Entrada')
+  mkdirSync(dir, { recursive: true })
+  return dir
+}
+
+// Créditos de cada archivo descargado (para el texto de la publicación)
+function creditos(agente) {
+  try { return JSON.parse(readFileSync(join(entradaDir(agente), 'creditos.json'), 'utf8')) } catch { return {} }
+}
+function anotarCredito(agente, archivo, linea) {
+  const c = creditos(agente)
+  c[basename(archivo)] = linea
+  writeFileSync(join(entradaDir(agente), 'creditos.json'), JSON.stringify(c, null, 2))
+}
+
+server.tool('buscar_fotos',
+  'Busca fotos en bancos gratis con licencia para uso comercial (Pixabay y Pexels) y las descarga a tu carpeta Entrada. Usa SOLO esta herramienta (o buscar_videos) para conseguir fotos: nunca descargues imágenes de otras páginas. Lee la descripción de cada foto: si no muestra el lugar exacto, no la uses para ese lugar.',
+  {
+    busqueda: z.string().describe('Qué buscar. Funciona mejor en inglés y con el nombre del lugar, p. ej. "Villa de Leyva square" o "Cartagena walled city"'),
+    cantidad: z.number().int().min(1).max(10).default(5),
+    orientacion: z.enum(['vertical', 'horizontal', 'cuadrada']).default('vertical'),
+    agente: agenteParam,
+  },
+  async ({ busqueda, cantidad, orientacion, agente }) => {
+    try {
+      const lines = await buscarEnBancos('fotos', busqueda, cantidad, orientacion, agente)
+      if (!lines.length) return ok(`No encontré fotos de "${busqueda}". Prueba otras palabras (en inglés) o la ciudad en vez del sitio exacto.`)
+      return ok(`${lines.length} fotos de "${busqueda}" en ${entradaDir(agente)}:\n${lines.join('\n')}\n\nÚsalas por su nombre de archivo. Licencia: uso comercial gratis, sin pedir permiso.`)
+    } catch (e) { return fail(e) }
+  })
+
+server.tool('buscar_videos',
+  'Busca videos cortos en bancos gratis con licencia para uso comercial (Pixabay y Pexels) y los descarga a tu carpeta Entrada en Full HD. Lee la descripción de cada video: si no muestra el lugar exacto, no lo uses para ese lugar.',
+  {
+    busqueda: z.string().describe('Qué buscar. Funciona mejor en inglés y con el nombre del lugar, p. ej. "Santa Marta beach aerial"'),
+    cantidad: z.number().int().min(1).max(6).default(3),
+    orientacion: z.enum(['vertical', 'horizontal', 'cuadrada']).default('vertical').describe('Pixabay no filtra por orientación; crear_reel recorta al formato'),
+    agente: agenteParam,
+  },
+  async ({ busqueda, cantidad, orientacion, agente }) => {
+    try {
+      const lines = await buscarEnBancos('videos', busqueda, cantidad, orientacion, agente)
+      if (!lines.length) return ok(`No encontré videos de "${busqueda}". Prueba otras palabras, busca fotos con buscar_fotos o usa un video general de la ciudad.`)
+      return ok(`${lines.length} videos de "${busqueda}" en ${entradaDir(agente)}:\n${lines.join('\n')}\n\nÚsalos por su nombre de archivo. Licencia: uso comercial gratis, sin pedir permiso.`)
+    } catch (e) { return fail(e) }
+  })
+
+// ---------- Reel de destino con fotos y videos (sin HyperFrames) ----------
+const FUENTES = join(ROOT, 'fuentes')
+const LOGO_BLANCO = join(ROOT, '..', 'app', 'public', 'logo-blanco.png')
+const IMAGEN = /\.(jpe?g|png|webp|bmp)$/i
+
+server.tool('crear_reel',
+  'Arma un reel con fotos y videos: cada escena con zoom suave o movimiento, transición, el nombre del lugar en letra de la marca, logo blanco y una tarjeta final con el destino, la próxima salida, el WhatsApp y el eslogan. Es la forma más segura de hacer reels de destinos (no necesita HyperFrames).',
+  {
+    escenas: z.array(z.object({
+      archivo: z.string().describe('Foto o video: nombre en tu carpeta Entrada, ruta o URL'),
+      texto: z.string().default('').describe('Nombre corto del lugar que se ve. Vacío = sin texto'),
+      segundos: z.number().min(1.5).max(10).default(4),
+      desde: z.number().min(0).default(0).describe('Solo videos: segundo del video desde el que empieza la escena'),
+    })).min(1).max(10),
+    cierre: z.object({
+      titulo: z.string().default('').describe('Destino en grande, p. ej. "Boyacá"'),
+      lineas: z.array(z.string()).max(4).default([]).describe('P. ej. "Próxima salida: 13 de noviembre", "WhatsApp 300 267 7775" y el eslogan'),
+      segundos: z.number().min(2).max(8).default(5),
+    }).optional(),
+    formato: z.enum(['vertical', 'post', 'cuadrado']).default('vertical').describe('vertical = Reels/Historias 1080x1920; post = 1080x1350; cuadrado = 1080x1080'),
+    musica: z.string().optional().describe('Audio con licencia libre (opcional). Sin música el reel queda en silencio'),
+    logo: z.boolean().default(true).describe('Logo blanco pequeño arriba en cada escena'),
+    nombre: z.string().describe('Nombre del MP4 final, sin extensión'),
+    agente: agenteParam,
+  },
+  async ({ escenas, cierre, formato, musica, logo, nombre, agente }) => {
+    try {
+      const [W, H] = { vertical: [1080, 1920], post: [1080, 1350], cuadrado: [1080, 1080] }[formato]
+      const T = 0.5 // duración de cada transición
+      const conCierre = !!(cierre && (cierre.titulo || cierre.lineas.length))
+      const segs = [...escenas.map(e => e.segundos), ...(conCierre ? [cierre.segundos] : [])]
+      const n = segs.length
+      const total = segs.reduce((a, b) => a + b, 0)
+      const finEscenas = escenas.reduce((a, e) => a + e.segundos, 0)
+      const hayLogo = existsSync(LOGO_BLANCO)
+      const fps = 30
+      // Medidas en proporción a la pantalla: arriba el logo, debajo el destino y los datos
+      const L = { vertical: [0.2, 0.25, 0.085], post: [0.07, 0.28, 0.1], cuadrado: [0.06, 0.27, 0.11] }[formato]
+      const logoGrande = Math.round(H * L[1]), logoChico = Math.round(H * L[2])
+      const y0 = Math.round(H * L[0]) + (hayLogo ? logoGrande + Math.round(H * 0.04) : Math.round(H * 0.25))
+      const inputs = [], chains = [], usados = []
+
+      // Cada clip dura su tiempo + la transición (menos el último): así cada escena se ve "segundos" completos
+      for (const [i, e] of escenas.entries()) {
+        const src = await resolveInput(e.archivo, agente)
+        usados.push(src)
+        const d = (e.segundos + (i < n - 1 ? T : 0)).toFixed(2)
+        if (IMAGEN.test(src)) {
+          const frames = Math.round(+d * fps)
+          const z = i % 2 ? `1.12-0.12*on/${frames}` : `1+0.12*on/${frames}` // acerca y aleja, alternando
+          inputs.push('-loop', '1', '-framerate', String(fps), '-t', d, '-i', src)
+          chains.push(`[${i}:v]scale=${W * 2}:${H * 2}:force_original_aspect_ratio=increase,crop=${W * 2}:${H * 2},` +
+            `zoompan=z='${z}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s=${W}x${H}:fps=${fps},setsar=1,format=yuv420p[s${i}]`)
+        } else {
+          // -stream_loop: si el video es más corto que la escena, se repite
+          inputs.push('-stream_loop', '-1', '-ss', String(e.desde), '-t', d, '-i', src)
+          chains.push(`[${i}:v]scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H},fps=${fps},setsar=1,format=yuv420p,` +
+            `trim=duration=${d},setpts=PTS-STARTPTS[s${i}]`)
+        }
+      }
+
+      let next = escenas.length
+      const logoIn = hayLogo ? next++ : -1
+      if (hayLogo) inputs.push('-loop', '1', '-i', LOGO_BLANCO)
+      if (conCierre) {
+        const color = (process.env.AGENTES_COLOR || '#0b2a4a').replace('#', '0x')
+        inputs.push('-f', 'lavfi', '-t', cierre.segundos.toFixed(2), '-i', `color=c=${color}:s=${W}x${H}:r=${fps}`)
+        const ci = next++
+        if (hayLogo) {
+          chains.push(`[${logoIn}:v]split[lc][lp]`, `[lc]scale=-1:${logoGrande}[lg]`,
+            `[${ci}:v][lg]overlay=(W-w)/2:${Math.round(H * L[0])}:shortest=1,setsar=1,format=yuv420p[s${n - 1}]`)
+        } else chains.push(`[${ci}:v]setsar=1,format=yuv420p[s${n - 1}]`)
+      } else if (hayLogo) chains.push(`[${logoIn}:v]null[lp]`)
+
+      // Transiciones: la k-ésima empieza justo cuando termina la escena k
+      let last = 's0', t = 0
+      for (let k = 0; k < n - 1; k++) {
+        t += segs[k]
+        chains.push(`[${last}][s${k + 1}]xfade=transition=fade:duration=${T}:offset=${t.toFixed(2)}[x${k}]`)
+        last = `x${k}`
+      }
+      if (hayLogo && logo) {
+        chains.push(`[lp]scale=-1:${logoChico}[ls]`,
+          `[${last}][ls]overlay=(W-w)/2:H*0.04:shortest=1:enable='lt(t,${finEscenas.toFixed(2)})'[conlogo]`)
+        last = 'conlogo'
+      } else if (hayLogo) chains.push('[lp]nullsink')
+
+      // Textos con Raleway (motor/fuentes) en un archivo ASS
+      const ts = (s) => { const cs = Math.round(s * 100); return `${Math.floor(cs / 360000)}:${String(Math.floor(cs / 6000) % 60).padStart(2, '0')}:${String(Math.floor(cs / 100) % 60).padStart(2, '0')}.${String(cs % 100).padStart(2, '0')}` }
+      const limpio = (s) => String(s).replace(/[{}\\]/g, '').replace(/\n/g, '\\N')
+      const lugar = Math.round(W * 0.085), titulo = Math.round(W * 0.12), linea = Math.round(W * 0.058)
+      const events = []
+      let ini = 0
+      for (const [i, e] of escenas.entries()) {
+        if (e.texto.trim()) events.push(`Dialogue: 0,${ts(ini + (i ? T : 0.2))},${ts(ini + e.segundos)},Lugar,,0,0,0,,{\\fad(250,200)\\fscx85\\fscy85\\t(0,250,\\fscx100\\fscy100)}${limpio(e.texto)}`)
+        ini += e.segundos
+      }
+      if (conCierre) {
+        const a = finEscenas + T, b = total
+        if (cierre.titulo) events.push(`Dialogue: 0,${ts(a)},${ts(b)},Titulo,,0,0,0,,{\\an8\\pos(${W / 2},${y0})\\fad(300,0)}${limpio(cierre.titulo)}`)
+        if (cierre.lineas.length) events.push(`Dialogue: 0,${ts(a + 0.3)},${ts(b)},Linea,,0,0,0,,{\\an8\\pos(${W / 2},${y0 + (cierre.titulo ? Math.round(titulo * 1.5) : 0)})\\fad(300,0)}${cierre.lineas.map(limpio).join('\\N')}`)
+      }
+      const work = join(ROOT, 'trabajos', '_reel', String(Date.now()))
+      mkdirSync(join(work, 'fuentes'), { recursive: true })
+      for (const f of readdirSync(FUENTES)) if (/\.ttf$/i.test(f)) copyFileSync(join(FUENTES, f), join(work, 'fuentes', f))
+      const margen = Math.round(W * 0.08)
+      writeFileSync(join(work, 'textos.ass'), [
+        '[Script Info]', 'ScriptType: v4.00+', 'WrapStyle: 0', `PlayResX: ${W}`, `PlayResY: ${H}`, '',
+        '[V4+ Styles]',
+        'Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding',
+        `Style: Lugar,Raleway ExtraBold,${lugar},&H00FFFFFF,&H00FFFFFF,&H00000000,&H78000000,0,0,0,0,100,100,1,0,1,3,4,2,${margen},${margen},${Math.round(H * 0.2)},1`,
+        `Style: Titulo,Raleway ExtraBold,${titulo},&H0055B1F8,&H00FFFFFF,&H00000000,&H00000000,0,0,0,0,100,100,1,0,1,0,0,8,${margen},${margen},0,1`,
+        `Style: Linea,Raleway,${linea},&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,0,0,8,${margen},${margen},0,1`,
+        '', '[Events]', 'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text',
+        ...events,
+      ].join('\n'))
+      chains.push(`[${last}]subtitles=textos.ass:fontsdir=fuentes[v]`)
+
+      // Audio: la música con entrada y salida suaves, o silencio (Instagram y Facebook prefieren que haya pista de audio)
+      if (musica) {
+        inputs.push('-stream_loop', '-1', '-i', await resolveInput(musica, agente))
+        chains.push(`[${next}:a]atrim=0:${total.toFixed(2)},afade=t=in:d=0.5,afade=t=out:st=${Math.max(0, total - 1.5).toFixed(2)}:d=1.5[a]`)
+      } else {
+        inputs.push('-f', 'lavfi', '-t', total.toFixed(2), '-i', 'anullsrc=r=48000:cl=stereo')
+        chains.push(`[${next}:a]anull[a]`)
+      }
+
+      const dest = outPath(agente, nombre, '.mp4')
+      await ffmpeg([...inputs, '-filter_complex', chains.join(';'), '-map', '[v]', '-map', '[a]', '-t', total.toFixed(2),
+        '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20', '-pix_fmt', 'yuv420p', '-r', String(fps),
+        '-c:a', 'aac', '-b:a', '160k', '-movflags', '+faststart', dest], { cwd: work })
+
+      const c = creditos(agente)
+      const lista = [...new Set(usados.map(u => c[basename(u)]).filter(Boolean))]
+      return ok(`Reel guardado: ${dest}\nDuración: ${(await duration(dest)).toFixed(1)} s · ${W}x${H}` +
+        (lista.length ? `\n\nCréditos para el final del texto de la publicación:\n${lista.join('\n')}` : ''))
     } catch (e) { return fail(e) }
   })
 
